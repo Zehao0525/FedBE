@@ -15,6 +15,7 @@ import torch
 import torch.nn as nn
 import torch.multiprocessing as mp
 torch.multiprocessing.set_sharing_strategy('file_system')
+import torch.nn.functional as F
 
 from utils.sampling import *
 from utils.options import args_parser
@@ -28,6 +29,7 @@ from models.FedM import FedAvgM
 from models.test import test_img
 import resnet
 
+NUM_CLASSES = 10
 if __name__ == '__main__':
     args = args_parser()
     
@@ -51,7 +53,9 @@ if __name__ == '__main__':
     classes = ('0','1','2','3','4','5','6','7','8','9')
 
     testloader = torch.utils.data.DataLoader(dataset_test, batch_size=4, shuffle=True, num_workers=2)
+    #data_loader = DataLoader(DatasetSplit(dataset_test, idxs), batch_size=1024, shuffle=False)
     
+    '''
     def test_thread(q, net_glob, dataset, ids):
         # acc: accuracy
         # loss: test loss
@@ -94,7 +98,9 @@ if __name__ == '__main__':
 
     [acc_train, loss_train], [acc_test,  loss_test], [acc_val,  loss_val] = eval(model, tag="DIST", server_id=server_id)
     print("%f\n"%(acc_train))
-    
+    '''
+
+
     dataiter = iter(testloader)
 
 
@@ -118,15 +124,66 @@ if __name__ == '__main__':
 
     correct = 0
     total = 0
+    bins = NUM_CLASSES
+    b_score = []
     # since we're not training, we don't need to calculate the gradients for our outputs
+
+    
+    def brier_score(probs,label):
+        prob = probs#.long()
+        print(prob)
+        labels = label.long()
+        print(labels)
+        label_probs = prob[np.arange(len(labels)),labels]
+        print(label_probs)
+        score = 1 - np.square(prob).sum(axis = -1) - 2*label_probs
+        return score
+
+    def bin_expected_calibration_errorscore(prob,label, bucket_size):
+        labels = label.long()
+        label_probs = prob[np.arange(len(labels)),labels]
+        preds = np.argmax(prob,axis = -1)
+        truth = preds == labels
+        ece = 0
+        for i in range(0,bucket_size,len(truth)):
+            acc = truth[i:bucket_size].sum(axis=0) / bucket_size
+            #np.histogram(probabilities, bins=bins, range=[0., 1.])
+            conf = label_probs[i:bucket_size].sum(axis=0) / bucket_size
+            ece += np.absolute(acc - conf) / len(labels) *bucket_size
+        return ece
+
+
+    images, labels = next(dataiter)
+    outputs = model(images)
+    out_prob = F.softmax(outputs,dim=1)
+    print("labels:",labels)
+    print("outputs:",outputs)
+    print("images type",type(images))
+    print("labels type",type(labels))
+    print("outputs type",type(outputs))
+    print("out_prob type",type(out_prob))
+
+    _, predicted = torch.max(outputs, 1)
+    bs = brier_score(out_prob,labels)
+    print("bs:",bs)
+
+    '''
     with torch.no_grad():
         for data in testloader:
             images, labels = data
             # calculate outputs by running images through the network
             outputs = model(images)
             # the class with the highest energy is what we choose as prediction
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
+            pred_prob, predicted = torch.max(outputs.data, 1)
+            total += labels.size(axis = 0)
             correct += (predicted == labels).sum().item()
+            #bs = brier_score(outputs,labels)
+            #b = np.append(b_score,bs)
+    
+    b_scores_avg = np.mean(b_score,axis = -1)
 
-    print(f'Accuracy of the network on the 10000 test images: {100 * correct // total} %')
+
+    print(f'Accuracy of the network on the test images: {100. * correct / total:.3} %')
+    print(f'Brier score avg of the network on the test images: {b_scores_avg:.3}')
+    '''
+

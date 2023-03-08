@@ -124,6 +124,7 @@ class ServerUpdate(object):
         self.args = args
         self.device = device
         self.loss_type = args.loss_type
+        # default KL
         self.loss_func = nn.KLDivLoss() if self.loss_type =="KL" else nn.CrossEntropyLoss()
         self.selected_clients = []
         
@@ -151,10 +152,12 @@ class ServerUpdate(object):
     def get_ensemble_logits(self, teachers, inputs, method='mean', global_ep=1000):
         logits = np.zeros((len(teachers), len(inputs), self.args.num_classes))
         for i, t_net in enumerate(teachers):
+          # logit has been F.softmax
           logit = get_input_logits(inputs, t_net.to(self.device), is_logit = self.args.is_logit) #Disable res
           logits[i] = logit
           
-        logits = np.transpose(logits, (1, 0, 2)) # batchsize, teachers, 10
+        logits = np.transpose(logits, (1, 0, 2)) # shape(batchsize, teachers, 10)
+        # merge logit just does temp scaling
         logits_arr, logits_cond = merge_logits(logits, method, self.args.loss_type, temp=self.args.temp, global_ep=global_ep)
         batch_entropy = get_entropy(logits.reshape((-1, self.args.num_classes)))
         return logits_arr, batch_entropy
@@ -183,6 +186,9 @@ class ServerUpdate(object):
 
         return float(acc)/cnt*100.0
 
+    #log_prob: output of student
+    #logits: temperature scaled teachers
+    #labels: gt labels
     def loss_wrapper(self, log_probs, logits, labels):        
         # Modify target logits
         if self.loss_type=="CE":
@@ -204,7 +210,7 @@ class ServerUpdate(object):
         else:      
           if "KL" in self.loss_type:
             log_probs = F.softmax(log_probs, dim=-1)
-            if self.loss_type== "reverse_KL":
+            if self.loss_type== "reverse_log_probsKL":
               P = log_probs  
               Q = logits                
             else:
@@ -294,8 +300,11 @@ class ServerUpdate(object):
         
         to_probe = True if global_ep%self.args.log_ep==0 else False
         ldr_train = []
+        # ldr_train: (all_image,all_logits,all_labels)
+        # all labels are ground truth labels
         ldr_train, train_acc, test_acc = self.record_teacher(ldr_train, net, teachers, global_ep, log_dir, probe=to_probe)
         (all_images, all_logits, all_labels) = ldr_train 
+        print("all_logits shape:",np.shape(all_logits))
         #======================Server Train========================
         print("Start server training...")
         net.to(self.device)       
@@ -326,6 +335,8 @@ class ServerUpdate(object):
                 net.zero_grad()
                 log_probs = net(images)
                 
+                # loss is the mean of different between loged result of student vs teacher
+                # We change this to implement ensemble based uncertainty calibration
                 loss, acc_cnt_i, cnt_i = self.loss_wrapper(log_probs, logits, labels)
                 acc+=acc_cnt_i
                 cnt+=cnt_i                

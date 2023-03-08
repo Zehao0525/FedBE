@@ -15,6 +15,7 @@ def args_parser():
     parser.add_argument('--aug', action='store_true', help="aug")
     parser.add_argument('--ens', action='store_true', help="ensemble")
     parser.add_argument('--store_model', action='store_true', help="store_model") 
+    parser.add_argument('--store_model_pipe', action='store_true', help="store all models along the pipeline") 
     parser.add_argument('--frac', type=float, default=1.0, help="the fraction of clients")
 
     # Local train

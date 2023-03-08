@@ -17,11 +17,27 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 import torch.nn.functional as F
 
-
-def store_model(iter, model_dir, w_glob_org, client_w_list):
+'''
+def store_model(iter, model_dir, w_glob_org, client_w_list, tag = ''): 
     torch.save(w_glob_org, os.path.join(model_dir, "w_org_%d"%iter)) 
     for i in range(len(client_w_list)):
-      torch.save(client_w_list[i], os.path.join(model_dir, "client_%d_%d"%(iter, i)))  
+        torch.save(client_w_list[i], os.path.join(model_dir, "client_%d_%d"%(iter, i)))  
+'''
+
+def store_model(iter, model_dir, w_glob_org, client_w_list): 
+    store_model_2(iter,model_dir,w_glob_org,tag='w_org')
+    store_model_2(iter,model_dir,client_w_list,tag='client')
+
+def store_model_2(round_num, model_dir, w_model, tag = ''):
+    if type(w_model) != list:
+        torch.save(model_dir, os.path.join(model_dir, tag+"_%d"%round_num)) 
+        return
+    model_dir = os.path.join(model_dir, tag)
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir) 
+    for i in range(len(w_model)):
+        torch.save(w_model[i], os.path.join(model_dir, tag+"_%d_%d"%(round_num, i)))
+    
 
 def adaptive_schedule(local_ep, total_ep, rounds, adap_ep):
   if rounds<5:
@@ -62,6 +78,7 @@ class DatasetSplit(Dataset):
         image, label = self.dataset[self.idxs[item]]
         return image, label    
         
+# logit = softmax uncertainty of input
 def get_input_logits(inputs, model, is_logit=False, net_org=None):
     model.eval()
     with torch.no_grad():
@@ -82,7 +99,7 @@ def temp_sharpen(x, axis=-1, temp=1.0):
     x = np.maximum(x**(1/temp), 1e-8)
     return x / x.sum(axis=axis, keepdims=True)
 
-    
+# loss_type default KL
 def merge_logits(logits, method, loss_type, temp=0.3, global_ep=1000):
     if "vote" in method:
       if loss_type=="CE":
@@ -104,7 +121,7 @@ def merge_logits(logits, method, loss_type, temp=0.3, global_ep=1000):
         logits_cond = np.max(logits_arr, axis=-1)
       else:
         logits_arr = logits
-        logits_cond = softmax(logits, axis=-1)
+        logits_cond = F.softmax(logits, axis=-1)
         logits_cond = np.max(logits_cond, axis=-1)    
 
     return logits_arr, logits_cond  
@@ -142,4 +159,10 @@ class logger():
     self.swag_train_acc_list=[]
     self.swag_test_acc_list=[]
     self.swag_val_acc_list = []    
+
+    self.uncert_b_score_list=[]
+    self.uncert_ece_list=[]
+    self.uncert_nll_list = []   
+    self.uncert_acc_list = []  
+    self.uncert_auroc_list = [] 
 

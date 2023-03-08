@@ -19,6 +19,11 @@ torch.multiprocessing.set_sharing_strategy('file_system')
 from utils.sampling import *
 from utils.options import args_parser
 from utils.tools import *
+
+from eval_utils.metrics_evaluator import metric_eval
+# Note: 
+# Should copy everything from main extension to 
+# main, and not import from main_extension to run on Google Colab
 from utils.main_extensions import *
 
 from models.Update import SWAGLocalUpdate, ServerUpdate
@@ -47,7 +52,11 @@ if not os.path.exists(args.acc_dir):
     
 model_dir = os.path.join(args.log_dir, "models")
 if not os.path.exists(model_dir):
-    os.makedirs(model_dir)         
+    os.makedirs(model_dir)   
+
+args.uncert_dir = os.path.join(args.log_dir, "uncert")
+if not os.path.exists(args.uncert_dir):
+    os.makedirs(args.uncert_dir)        
 
 # transform train parameters
 transform_train = transforms.Compose([
@@ -223,6 +232,10 @@ def test_thread(q, net_glob, dataset, ids):
     q.put([acc, loss])
     return [acc, loss]
 
+def test_thread_uncert(q, net_glob, dataset, ids):
+    return None
+
+
 def eval(net_glob, tag='', server_id=None):
     # testing
     q = mp.Manager().Queue()
@@ -246,6 +259,17 @@ def eval(net_glob, tag='', server_id=None):
 
     [acc_val,  loss_val] = q3.get()
 
+    q4 = mp.Manager().Queue()
+    p_uncert = mp.Process(target=test_thread_uncert, args=(q3, net_glob, dataset_eval, server_id))
+    p_uncert.start()
+    p_uncert.join()
+
+    eval_dict = q4.get()
+    eval_dict.pop('hist_corr')
+    eval_dict.pop('hist_incorr')
+    eval_dict.pop('hist_bins')
+    eval_dict.pop('ece_acc_arr')
+
     print(tag, "Training accuracy: {:.2f}".format(acc_train))
     print(tag, "Server accuracy: {:.2f}".format(acc_val))
     print(tag, "Testing accuracy: {:.2f}".format(acc_test))
@@ -254,11 +278,11 @@ def eval(net_glob, tag='', server_id=None):
     del q2 
     del q3 
 
-    return [acc_train, loss_train], [acc_test,  loss_test], [acc_val,  loss_val]
+    return [acc_train, loss_train], [acc_test,  loss_test], [acc_val,  loss_val],eval_dict
 
 
 def put_log(logger, net_glob, tag, iters=-1):
-    [acc_train, loss_train], [acc_test,  loss_test], [acc_val,  loss_val] = eval(net_glob, tag=tag, server_id=server_id)
+    [acc_train, loss_train], [acc_test,  loss_test], [acc_val,  loss_val], eval_dict = eval(net_glob, tag=tag, server_id=server_id)
 
     if iters==0:
         open(os.path.join(args.acc_dir, tag+"_train_acc.txt"), "w")

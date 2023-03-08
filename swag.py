@@ -82,6 +82,7 @@ class SWAG_server(torch.nn.Module):
               grad = teachers[i][k].cpu()- self.base_model[k].cpu()
               norm = torch.norm(grad, p=2)
               
+              # why?
               grad = grad/norm
               sq_grad = grad**2
               
@@ -97,17 +98,25 @@ class SWAG_server(torch.nn.Module):
         
     def construct_models(self, teachers, mean=None, mode="dir"):
       if mode=="gaussian":
+        # w_avg is the average weight/norm of the teachers - base model weights
+        # w_sq_avg is the square of that
+        # norm is the average vector norm of each weight layer (square root of sum of vector values squared)
         w_avg, w_sq_avg, w_norm= self.compute_mean_sq(teachers)
+        # compute variance of weights
         w_var = self.compute_var(w_avg, w_sq_avg)      
         
         mean_grad = copy.deepcopy(w_avg)
         for i in range(self.concentrate_num):
           for k in w_avg.keys():
             mean = w_avg[k]
+            # var is w_var[k] at most and 1e-6 at least
             var = torch.clamp(w_var[k], 1e-6)
             
+            # same shape as mean but with random numbers with mean 0 and var 1 from norm dist
             eps = torch.randn_like(mean)
             sample_grad = mean + torch.sqrt(var) * eps * self.args.var_scale
+            # in the case self.concentrate_num=1, this is the same as:
+            # mean_grad[k] = sample_grad
             mean_grad[k] = (i*mean_grad[k] + sample_grad) / (i+1)
         
         for k in w_avg.keys():

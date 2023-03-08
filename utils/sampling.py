@@ -71,6 +71,7 @@ def cifar_iid(dataset, num_users, num_data=50000):
     Sample I.I.D. client data from CIFAR10 dataset
     :param dataset:
     :param num_users:
+    :param num_data: number of data distributed to clients
     :return: dict of image index
     """
     
@@ -110,10 +111,13 @@ def cifar_noniid(dataset, num_users, num_data=50000, method="step"):
       idxs = idxs_labels[0,:]
       
       least_idx = np.zeros((num_users, 10, _lst_sample), dtype=np.int)
+      # iterating over classes
       for i in range(10):
         idx_i = np.random.choice(np.where(labels==i)[0], num_users*_lst_sample, replace=False)
         least_idx[:, i, :] = idx_i.reshape((num_users, _lst_sample))
+      # We end with (10)
       least_idx = np.reshape(least_idx, (num_users, -1))
+      # least_idx have shape (num_users,_lst_sample*10)
       
       least_idx_set = set(np.reshape(least_idx, (-1)))
       server_idx = np.random.choice(list(set(range(50000))-least_idx_set), 50000-num_data, replace=False)
@@ -121,6 +125,7 @@ def cifar_noniid(dataset, num_users, num_data=50000, method="step"):
       # divide and assign
       dict_users = {i: np.array([], dtype='int64') for i in range(num_users)}
       for i in range(num_users):
+          # rand_set is chose 2 from num_users*2
           rand_set = set(np.random.choice(idx_shard, num_shards//num_users, replace=False))
           idx_shard = list(set(idx_shard) - rand_set)
           for rand in rand_set:
@@ -138,6 +143,7 @@ def cifar_noniid(dataset, num_users, num_data=50000, method="step"):
       _lst_sample = 2
 
       least_idx = np.zeros((num_users, 10, _lst_sample), dtype=np.int)
+      
       for i in range(10):
         idx_i = np.random.choice(np.where(labels==i)[0], num_users*_lst_sample, replace=False)
         least_idx[:, i, :] = idx_i.reshape((num_users, _lst_sample))

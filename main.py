@@ -24,6 +24,8 @@ from utils.options import args_parser
 from utils.tools import *
 from utils.main_extensions import *
 
+from eval_utils.metrics_evaluator import metric_eval
+
 from models.Update import SWAGLocalUpdate, ServerUpdate
 from models.Nets import MLP, CNNMnist, CNNCifar
 from models.Fed import FedAvg, create_local_init
@@ -363,7 +365,7 @@ if __name__ == '__main__':
                 p.join()
 
             while not q.empty(): 
-                # fake_out : A trained teacher model and its index (client number)
+                # fake_out : A trained client model and its index (client number)
                 fake_out = q.get()
                 idx = int(fake_out[-1])
                 clients[idx].append(fake_out[0])
@@ -419,6 +421,9 @@ if __name__ == '__main__':
             base_teachers = client_w
             print("Warming up, using DIST.")
         
+        if args.store_model_pipe and (iters%args.log_ep==0 or iters==args.rounds-1):
+            swag_ensemble_sample_w = copy.deepcopy(teachers_list)
+        
         if args.use_client:
             teachers_list+=clients          
           
@@ -461,6 +466,18 @@ if __name__ == '__main__':
         if args.store_model and iters == args.rounds-1:
             store_model(iters, model_dir, w_glob_org, client_w)
             print("best_acc",best_acc)
+        
+        # store teacher models, AVG model, w/oSWAG model
+        if args.store_model_pipe and (iters%args.log_ep==0 or iters==args.rounds-1):
+            if not args.dont_add_fedavg:
+                store_teacher_w = swag_ensemble_sample_w[1:]
+            else:
+                store_teacher_w = swag_ensemble_sample_w
+            teacher_w = [t.state_dict() for t in store_teacher_w]
+            print(len(teacher_w))
+            store_model_2(iters,model_dir,teacher_w,tag='w_swag_teacher_sample')
+            store_model_2(iters,model_dir,w_glob_avg,tag='w_client_avg')   
+            store_model_2(iters,model_dir,w_glob,tag='w_woSWA')  
 
         del clients
     net_glob.load_state_dict(w_glob_mean)
